@@ -93,10 +93,11 @@ A working prototype is available at `brandonchinn178/string-syntax <https://gith
 
 #. Post-process the string in the following steps:
 
-   #. Collapse string gaps
+   #. Replace string gaps with ``\&``
 
       * See `Section 2.6 <https://www.haskell.org/onlinereport/haskell2010/haskellch2.html#x7-200002.6>`_ of the Haskell 2010 Report
       * See the example in *Section 3.3 String gaps*
+      * Gaps aren't elided completely, to match normal string behavior, e.g. ``"""\65\  \0"""``
 
    #. Split the string by newlines
 
