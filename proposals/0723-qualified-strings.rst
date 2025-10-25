@@ -141,12 +141,11 @@ Qualified multiline strings are only allowed if ``-XMultilineStrings`` is enable
 Lexical Structure
 ~~~~~~~~~~~~~~~~~
 
-Update `Section 10.2 <https://www.haskell.org/onlinereport/haskell2010/haskellch10.html#x17-17700010.2>`_ of the Haskell 2010 report as follows.
+Update `Section 10.2 <https://www.haskell.org/onlinereport/haskell2010/haskellch10.html#x17-17700010.2>`_ to add ``modid . string`` to ``literal``:
 
 .. code-block:: abnf
 
-  string  → astring | modid . astring
-  astring → " {graphic⟨'"' | '\'⟩ | space | escape | gap} "
+  literal → integer | float | char | string | modid . string
 
 Module name resolution
 ~~~~~~~~~~~~~~~~~~~~~~
