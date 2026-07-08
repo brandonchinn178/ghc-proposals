@@ -249,7 +249,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   instance Interpolate Bool where
     interpolate = fromString . show
 
-Types may implement ``Interpolate`` using ``IsString`` or ``Monoid``; see `Section 3.2 Composite types <#32composite-types>`_ for an example. The default interpolator will only ever use this as ``s ~ StringBuilder``, but this allows other qualified interpolators to reuse the built-in ``Interpolate`` class and avoid roundtripping through ``String`` in certain instances.
+Types may implement ``Interpolate`` using ``IsString`` or ``Monoid``. The default interpolator will only ever use this as ``s ~ StringBuilder``, but this allows other qualified interpolators to reuse the built-in ``Interpolate`` class and avoid roundtripping through ``String`` in certain instances. See `Section 3.2 Composite types <#32composite-types>`_ for an example and additional details.
 
 Expansion
 ~~~~~~~~~
@@ -271,9 +271,11 @@ With the machinery defined above, the following interpolated string desugars to 
     interpolateValue name   `interpolateAppend`
     interpolateEmpty
 
-Namely:
+To be more precise, the tokens parsed in `Section 2.2 Context-Free Syntax <#22context-free-syntax>`_ will be expanded as follows:
 
 * An ``istringRaw`` component expands to ``interpolateRaw "<istringRaw>"``
+
+  * ``<istringRaw>`` refers to the string literal stored in the ``istringRaw`` token
 
   * The string literal passed to ``interpolateRaw`` is a strict ``String`` literal, unaffected by ``-XOverloadedStrings``
 
@@ -281,40 +283,23 @@ Namely:
 
 * The list of ``istring`` components between ``istringBegin`` and ``istringEnd`` expands to the expansion of the components, with ``interpolateAppend`` as "list cons" and ``interpolateEmpty`` as "list nil".
 
-  * ``interpolateAppend`` is always right-associative
+  * The expansion is generated as right-associative; i.e. it will desugar to ``x `interpolateAppend` (y `interpolateAppend` (z `interpolateAppend` ...))`` (parentheses omitted in all the examples for clarity)
 
-  * Related: `Section 2.7 OverloadedStrings <#27overloadedstrings>`_ and `Section 2.8 QualifiedStrings <#28qualifiedstrings>`_
+  * Related: `Section 2.5.1 OverloadedStrings <#251overloadedstrings>`_ and `Section 2.5.2 QualifiedStrings <#252qualifiedstrings>`_
 
-``ghc-experimental`` modules
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-This proposal would be adding the following modules to ``ghc-experimental``, which would potentially be promoted to a proper library like ``base`` once the feature is stablized.
-
-.. list-table::
-    :align: left
-
-    * - **Module**
-      - **Details**
-    * - ``Data.String.Experimental``
-      - Re-exports ``Data.String.Interpolate.Class.Experimental`` and ``Data.String.Interpolate.Default.Experimental``
-    * - ``Data.String.Interpolate.Class.Experimental``
-      - Defines the ``Interpolate`` class and instances as written in `Section 2.4 Machinery <#24machinery>`_
-    * - ``Data.String.Interpolate.Default.Experimental``
-      - Defines the classes and functions for the default ``s"..."`` syntax, as written in `Section 2.4 Machinery <#24machinery>`_
-    * - ``Data.String.Interpolate.Basic.Experimental``
-      - Defines an interpolator that's the same as the default except interpolates values directly without automatic conversion with ``Interpolate`` (See `Section 10.3 Provided interpolator: Basic <#103provided-interpolator-basic>`_)
-    * - ``Data.String.Interpolate.ShowS.Experimental``
-      - Defines an interpolator useful for implementing ``showsPrec`` (See `Section 10.4 Provided interpolator: ShowS <#104provided-interpolator-shows>`_)
+The desugaring here respects ``RebindableSyntax``, so a project that wishes to use a different desugaring for the default ``s"..."`` syntax may rebind the interpolator bindings as desired.
 
 OverloadedStrings
-~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^
 
 When ``-XOverloadedStrings`` is enabled, a final ``fromString`` is added after the ``interpolateFinalize`` call. This still constructs the string with ``StringBuilder`` -> ``String``, so users might prefer using ``-XQualifiedStrings`` instead.
 
 QualifiedStrings
-~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^
 
-When ``-XQualifiedStrings`` is enabled, you may qualify string interpolation, where ``[modid.]s"..."`` desugars to the same expressions, except resolving the ``interpolate*`` functions as ``[modid.]interpolate*``. Some examples:
+When ``-XQualifiedStrings`` is enabled, you may qualify string interpolation, where ``[modid.]s"..."`` desugars to the same expressions, except resolving the ``interpolate*`` functions as ``[modid.]interpolate*``. If both ``-XOverloadedStrings`` and ``-XQualifiedStrings`` are enabled, ``-XOverloadedStrings`` is ignored for ``[modid.]s"..."`` constructs.
+
+Some examples:
 
 ::
 
@@ -337,7 +322,7 @@ When ``-XQualifiedStrings`` is enabled, you may qualify string interpolation, wh
     SQL.interpolateValue age                                 `SQL.interpolateAppend`
     SQL.interpolateEmpty
 
-It's highly recommended that every string type with an ``IsString`` instance provides at least one string interpolator reusing the built-in ``Interpolate`` class. That way, there's always an option to use ``MyString.s"..."`` if the user does not wish to globally enable ``-XOverloadedStrings``. This interpolator could simply be a monomorphized version of the default interpolator:
+It's highly recommended that every type with an ``IsString`` instance provides at least one ``QualifiedStrings`` interpolator reusing the built-in ``Interpolate`` class. That way, there's always an option to use ``MyString.s"..."`` if the user does not wish to globally enable ``-XOverloadedStrings``. A naive implementation would simply be a monomorphized version of the default interpolator:
 
 ::
 
@@ -352,7 +337,7 @@ It's highly recommended that every string type with an ``IsString`` instance pro
     interpolateFinalize :: StringBuilder -> MyString
     interpolateFinalize = S.interpolateFinalize
 
-Or it could reuse the built-in ``Interpolate`` class using its own ``Builder`` type:
+A more sophisticated implementation could reuse the built-in ``Interpolate`` class using its own ``Builder`` type:
 
 ::
 
@@ -384,7 +369,7 @@ The following laws should hold, if the expression compiles:
 * ``Data.String.fromString "str" == M.s"str"``
 
 MultilineStrings
-~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^
 
 When ``-XMultilineStrings`` is enabled, string interpolation may be used with multiline strings. Multiline string interpolations resolve the multiline string first, then do the string interpolation. This means that qualified string interpolations work with multiline strings for free.
 
@@ -405,6 +390,27 @@ When ``-XMultilineStrings`` is enabled, string interpolation may be used with mu
 
   -- resolve interpolation
   let str2 = "hello world\nworld hello\nhello world"
+
+``ghc-experimental`` modules
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This proposal would be adding the following modules to ``ghc-experimental``, which would potentially be promoted to a proper library like ``base`` once the feature is stablized.
+
+.. list-table::
+    :align: left
+
+    * - **Module**
+      - **Details**
+    * - ``Data.String.Experimental``
+      - Re-exports ``Data.String.Interpolate.Class.Experimental`` and ``Data.String.Interpolate.Default.Experimental``
+    * - ``Data.String.Interpolate.Class.Experimental``
+      - Defines the ``Interpolate`` class and instances as written in `Section 2.4 Machinery <#24machinery>`_
+    * - ``Data.String.Interpolate.Default.Experimental``
+      - Defines the classes and functions for the default ``s"..."`` syntax, as written in `Section 2.4 Machinery <#24machinery>`_
+    * - ``Data.String.Interpolate.Basic.Experimental``
+      - Defines an interpolator that's the same as the default except interpolates values directly without automatic conversion with ``Interpolate`` (See `Section 10.3 Provided interpolator: Basic <#103provided-interpolator-basic>`_)
+    * - ``Data.String.Interpolate.ShowS.Experimental``
+      - Defines an interpolator useful for implementing ``showsPrec`` (See `Section 10.4 Provided interpolator: ShowS <#104provided-interpolator-shows>`_)
 
 Template Haskell
 ~~~~~~~~~~~~~~~~
@@ -482,6 +488,33 @@ The ``Basic`` interpolator would be useful here, to reuse string interpolation s
           file' = interpolate file
           line' = interpolate line
           col' = interpolate col
+
+If this instance did not take advantage of the polymorphism and was implemented as ``fromString s"${file}:${line}:${col}"``, it could have a performance impact on custom interpolators, such as ``text``:
+
+::
+
+    -- Original
+    Text.s"Error at: ${loc}"
+
+    -- Desugared, staying in polymorphic `s` with `interpolate file <> ...`
+    interpolateRaw "Error at: " `interpolateAppend`
+        (interpolate file <> fromString ":" <> interpolate line <> fromString ":" <> interpolate col) `interpolateAppend`
+        interpolateEmpty
+    Text.Builder.toText $
+        fromString "Error at: " <>
+        (fromString file <> fromString ":" <> fromString (show line) <> fromString ":" <> fromString (show col)) <>
+        mempty
+
+    -- Desugared, monomorphic implementation with `fromString s"..."`
+    interpolateRaw "Error at: " `interpolateAppend`
+        fromString (interpolate file <> fromString ":" <> interpolate line <> fromString ":" <> interpolate col) `interpolateAppend`
+        interpolateEmpty
+    Text.Builder.toText $
+        fromString "Error at: " <>
+        fromString (file <> ":" <> show line <> ":" <> show col) <>
+        mempty
+
+Notice that the monomorphic implementation would concatenate the file/line/col as String and then lifting it up to TextBuilder, while the polymorphic implementation lifts file/line/col to TextBuilder immediately and concatenates as TextBuilder.
 
 Effect and Interactions
 -----------------------
@@ -708,7 +741,7 @@ Users could then write:
 Text
 ~~~~
 
-When ``OverloadedStrings`` is enabled, the default interpolation builds up with ``StringBuilder`` then converts to ``Text`` with a final ``fromString``. As mentioned in `Section 2.8 QualifiedStrings <#28qualifiedstrings>`_, ``text`` should provide interpolators that reuse the built-in ``Interpolate`` class, probably using ``Builder`` to be as performant as possible:
+When ``OverloadedStrings`` is enabled, the default interpolation builds up with ``StringBuilder`` then converts to ``Text`` with a final ``fromString``. As mentioned in `Section 2.5.2 QualifiedStrings <#252qualifiedstrings>`_, ``text`` should provide interpolators that reuse the built-in ``Interpolate`` class, probably using ``Builder`` to be as performant as possible:
 
 ::
 
