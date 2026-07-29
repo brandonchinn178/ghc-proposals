@@ -4,7 +4,7 @@ Lazy Field Annotations
 .. author:: Simon Jakobi
 .. date-accepted:: 2026-06-30
 .. ticket-url:: https://gitlab.haskell.org/ghc/ghc/-/issues/24455
-.. implemented::
+.. implemented:: 10.2
 .. highlight:: haskell
 .. header:: This proposal was `discussed at this pull request <https://github.com/ghc-proposals/ghc-proposals/pull/752>`_.
 .. sectnum::
