@@ -101,6 +101,8 @@ If Haskell had native string interpolation, it would have the benefit and safety
 
   let textExample = s"${name1} (age: ${age1}) encountered ${name2} (age: ${age2})"
 
+.. _proposed-spec:
+
 Proposed Change Specification
 -----------------------------
 
@@ -132,7 +134,7 @@ Concretely, ``-XStringInterpolation`` enables the following syntax:
     interpolateRaw " b"      `interpolateAppend`
     interpolateEmpty
 
-These definitions will be provided by ``Data.String.Experimental``, which will be initially implemented in ``ghc-experimental``. See `Section 2.4 Machinery <#24machinery>`_ for details.
+These definitions will be provided by ``Data.String.Experimental``, which will be initially implemented in ``ghc-experimental``. See :ref:`machinery` for details.
 
 Lexical Structure
 ~~~~~~~~~~~~~~~~~
@@ -174,7 +176,9 @@ Also add ``$`` to ``charesc``:
 
 With ``$`` added to ``charesc``, interpolation can be avoided by escaping the dollar sign; e.g. ``s"\${foo}" == "${foo}"``.
 
-This grammar enables interpolating expressions with nested braces. Concretely, ``istringExprOpen`` and ``istringExprClose`` are only lexed within the ``istring`` and ``istringMultiline`` grammar productions, using Alex start codes. See `Section 3.1 Parsing <#31parsing>`_ for examples.
+This grammar enables interpolating expressions with nested braces. Concretely, ``istringExprOpen`` and ``istringExprClose`` are only lexed within the ``istring`` and ``istringMultiline`` grammar productions, using Alex start codes. See :ref:`parsing` for examples.
+
+.. _context-free-syntax:
 
 Context-Free Syntax
 ~~~~~~~~~~~~~~~~~~~
@@ -197,6 +201,8 @@ Update `Section 10.5 <https://www.haskell.org/onlinereport/haskell2010/haskellch
     istringMultilineBegin
       {istringMultilineRawStartLine | istringExprOpen exp istringExprClose istringMultilineRawMidLine}
       istringMultilineEnd
+
+.. _machinery:
 
 Machinery
 ~~~~~~~~~
@@ -249,7 +255,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   instance Interpolate Bool where
     interpolate = fromString . show
 
-Types may implement ``Interpolate`` using ``IsString`` or ``Monoid``. The default interpolator will only ever use this as ``s ~ StringBuilder``, but this allows other qualified interpolators to reuse the built-in ``Interpolate`` class and avoid roundtripping through ``String`` in certain instances. See `Section 3.2 Composite types <#32composite-types>`_ for an example and additional details.
+Types may implement ``Interpolate`` using ``IsString`` or ``Monoid``. The default interpolator will only ever use this as ``s ~ StringBuilder``, but this allows other qualified interpolators to reuse the built-in ``Interpolate`` class and avoid roundtripping through ``String`` in certain instances. See :ref:`composite-types` for an example and additional details.
 
 Expansion
 ~~~~~~~~~
@@ -271,7 +277,7 @@ With the machinery defined above, the following interpolated string desugars to 
     interpolateValue name   `interpolateAppend`
     interpolateEmpty
 
-To be more precise, the tokens parsed in `Section 2.2 Context-Free Syntax <#22context-free-syntax>`_ will be expanded as follows:
+To be more precise, the tokens parsed in :ref:`context-free-syntax` will be expanded as follows:
 
 * An ``istringRaw`` component expands to ``interpolateRaw "<istringRaw>"``
 
@@ -285,14 +291,18 @@ To be more precise, the tokens parsed in `Section 2.2 Context-Free Syntax <#22co
 
   * The expansion is generated as right-associative; i.e. it will desugar to ``x `interpolateAppend` (y `interpolateAppend` (z `interpolateAppend` ...))`` (parentheses omitted in all the examples for clarity)
 
-  * Related: `Section 2.5.1 OverloadedStrings <#251overloadedstrings>`_ and `Section 2.5.2 QualifiedStrings <#252qualifiedstrings>`_
+  * Related: :ref:`overloaded-strings` and :ref:`qualified-strings`
 
 The desugaring here respects ``RebindableSyntax``, so a project that wishes to use a different desugaring for the default ``s"..."`` syntax may rebind the interpolator bindings as desired.
+
+.. _overloaded-strings:
 
 OverloadedStrings
 ^^^^^^^^^^^^^^^^^
 
 When ``-XOverloadedStrings`` is enabled, a final ``fromString`` is added after the ``interpolateFinalize`` call. This still constructs the string with ``StringBuilder`` -> ``String``, so users might prefer using ``-XQualifiedStrings`` instead.
+
+.. _qualified-strings:
 
 QualifiedStrings
 ^^^^^^^^^^^^^^^^
@@ -404,13 +414,13 @@ This proposal would be adding the following modules to ``ghc-experimental``, whi
     * - ``Data.String.Experimental``
       - Re-exports ``Data.String.Interpolate.Class.Experimental`` and ``Data.String.Interpolate.Default.Experimental``
     * - ``Data.String.Interpolate.Class.Experimental``
-      - Defines the ``Interpolate`` class and instances as written in `Section 2.4 Machinery <#24machinery>`_
+      - Defines the ``Interpolate`` class and instances as written in :ref:`machinery`
     * - ``Data.String.Interpolate.Default.Experimental``
-      - Defines the classes and functions for the default ``s"..."`` syntax, as written in `Section 2.4 Machinery <#24machinery>`_
+      - Defines the classes and functions for the default ``s"..."`` syntax, as written in :ref:`machinery`
     * - ``Data.String.Interpolate.Basic.Experimental``
-      - Defines an interpolator that's the same as the default except interpolates values directly without automatic conversion with ``Interpolate`` (See `Section 10.3 Provided interpolator: Basic <#103provided-interpolator-basic>`_)
+      - Defines an interpolator that's the same as the default except interpolates values directly without automatic conversion with ``Interpolate`` (See :ref:`basic-interpolator`)
     * - ``Data.String.Interpolate.ShowS.Experimental``
-      - Defines an interpolator useful for implementing ``showsPrec`` (See `Section 10.4 Provided interpolator: ShowS <#104provided-interpolator-shows>`_)
+      - Defines an interpolator useful for implementing ``showsPrec`` (See :ref:`shows-interpolator`)
 
 Template Haskell
 ~~~~~~~~~~~~~~~~
@@ -419,6 +429,8 @@ We are intentionally not adding anything to Template Haskell, as one could just 
 
 Examples
 --------
+
+.. _parsing:
 
 Parsing
 ~~~~~~~
@@ -457,6 +469,8 @@ Parsing
     * - ``s"a ${b -- asdf} c"``
       - The rest of the string is commented out
 
+.. _composite-types:
+
 Composite types
 ~~~~~~~~~~~~~~~
 
@@ -478,7 +492,7 @@ Composite types
         fromString ":" <>
         interpolate col
 
-The ``Basic`` interpolator would be useful here, to reuse string interpolation syntax (`Section 10.3 Provided interpolator: Basic <#103provided-interpolator-basic>`_):
+The ``Basic`` interpolator would be useful here, to reuse string interpolation syntax (:ref:`basic-interpolator`):
 
 ::
 
@@ -525,7 +539,7 @@ An existing program containing ``s"..."`` will break when ``-XStringInterpolatio
 #. Easily mitigatable: just add a space, which improves readability anyway
 #. Prefixing string literals like ``s"..."`` is common in other languages: Python, Scala, Javascript/Typescript, etc. so it shouldn't be a big hurdle for newcomers
 
-Interacts nicely with ``-XOverloadedStrings``, ``-XQualifiedStrings``, and ``-XMultilineStrings``. See `Section 2 Proposed Change Specification <#2proposed-change-specification>`_ above.
+Interacts nicely with ``-XOverloadedStrings``, ``-XQualifiedStrings``, and ``-XMultilineStrings``. See :ref:`proposed-spec` above.
 
 Costs and Drawbacks
 -------------------
@@ -547,7 +561,7 @@ Alternatives
   * Pro: less likely to encounter type inference issues
   * Con: adds more noise to interpolate non-string values
   * This is what ``neat-interpolation`` does
-  * See `Section 10.1 Community Survey <#101community-survey>`_
+  * See :ref:`community-survey`
 
 * Reuse ``PrintfArg``
 
@@ -648,7 +662,7 @@ Delimiter-related Alternatives
 
 * Allow custom delimiters, which could be defined with Template Haskell or some other approach
 
-  * See `Section 10.1 Community Survey <#101community-survey>`_
+  * See :ref:`community-survey`
 
 Unresolved Questions
 --------------------
@@ -664,6 +678,8 @@ Endorsements
 Appendix
 --------
 
+.. _community-survey:
+
 Community Survey
 ~~~~~~~~~~~~~~~~
 
@@ -675,6 +691,8 @@ Performance consideration
 Strings are notorious for O(n^2) concatenations, but the current proposal builds with ``ShowS``, so it should remain linear. The only case where it might be O(n^2) is when nesting interpolated strings inside interpolated strings (although benchmarking still shows this to be linear in practice).
 
 Benchmarks: https://github.com/brandonchinn178/ghc-string-interpolation-prototypes/tree/main/bench
+
+.. _basic-interpolator:
 
 Provided interpolator: Basic
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -710,6 +728,8 @@ This is particularly useful for ``Builder``, where users could explicitly conver
   render :: Person -> B.Builder
   render Person{..} = B.s"Person(name = ${B.fromLazyText name}, age = ${B.decimal age})"
 
+.. _shows-interpolator:
+
 Provided interpolator: ShowS
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -741,7 +761,7 @@ Users could then write:
 Text
 ~~~~
 
-When ``OverloadedStrings`` is enabled, the default interpolation builds up with ``StringBuilder`` then converts to ``Text`` with a final ``fromString``. As mentioned in `Section 2.5.2 QualifiedStrings <#252qualifiedstrings>`_, ``text`` should provide interpolators that reuse the built-in ``Interpolate`` class, probably using ``Builder`` to be as performant as possible:
+When ``OverloadedStrings`` is enabled, the default interpolation builds up with ``StringBuilder`` then converts to ``Text`` with a final ``fromString``. As mentioned in :ref:`qualified-strings`, ``text`` should provide interpolators that reuse the built-in ``Interpolate`` class, probably using ``Builder`` to be as performant as possible:
 
 ::
 
