@@ -39,7 +39,7 @@ Most languages have support for interpolating variables and (usually) arbitrary 
 
     `Expected: ${x + y}, got: ${result}`
 
-This proposal proposes adding S-strings (like Scala's syntax) to Haskell.
+This proposal adds S-strings (like Scala's syntax) to Haskell.
 
 Motivation
 ----------
@@ -65,7 +65,7 @@ Most non-trivial projects build strings at some point: printing out logs, render
     Text.replace "${result}" (Text.show result) $
     "Expected: ${x + y}, got: ${result}"
 
-But each of these options leave much to be desired:
+But each of these options leaves much to be desired:
 
 * Manual interpolation (e.g. ``<>``, ``show``, ``unwords``, etc.) is annoying, especially for strings with a lot of interpolation. It's hard to see the overall structure of the string, especially when building up a ``Text``:
   ::
@@ -88,7 +88,7 @@ But each of these options leave much to be desired:
         , "(age: " <> T.pack (show age2) <> ")"
         ]
 
-* ``printf`` is partial and unsafe, which especially safety-conscious people might always stay away from anyway. Using a safer ``printf`` like ``formatting`` induces a third-party dependency, which is admittedly lightweight, but isn't as seamless of an integration as native string interpolation would be
+* ``printf`` is partial and unsafe, which especially safety-conscious people may prefer to avoid entirely. Using a safer ``printf`` like ``formatting`` induces a third-party dependency, which is admittedly lightweight, but isn't as seamless as native string interpolation would be
 
 * Quasiquotes induces a dependency on Template Haskell, which a lot of people avoid out of principle. Most QuasiQuoters also add a dependency on ``haskell-src-exts`` to parse arbitrary Haskell expressions, which could technically be avoided by using something like ``ghc-meta`` (`repo <https://github.com/noughtmare/ghc-meta>`_, `GHC issue <https://gitlab.haskell.org/ghc/ghc/-/issues/20862>`_), but this isn't in wide use yet.
 
@@ -111,7 +111,7 @@ This proposal introduces the ``-XStringInterpolation`` extension, which enables 
 High-level Overview
 ~~~~~~~~~~~~~~~~~~~
 
-At its core, this proposal proposes the following functionality:
+At this proposal's core, the following functionality is added:
 
 * The syntax ``s"age: ${age}"`` expands to a built-in implementation using a new ``Interpolate`` type class to interpolate values such as ``age``
 
@@ -119,7 +119,9 @@ At its core, this proposal proposes the following functionality:
 
   * Same technique as ``-XQualifiedStrings``
 
-* ``s"..."`` is exactly equivalent to ``Data.String.Experimental.s"..."``, where ``Data.String.Experimental`` is a new module in ``ghc-experimental``.
+* ``s"..."`` expands to ``Data.String.Experimental.s"..."``, where ``Data.String.Experimental`` is a new module in ``ghc-experimental``.
+
+  * The expansion is slightly modified when ``-XOverloadedStrings`` is enabled; see :ref:`overloaded-strings`
 
 Concretely, ``-XStringInterpolation`` enables the following syntax:
 
@@ -207,7 +209,7 @@ Update `Section 10.5 <https://www.haskell.org/onlinereport/haskell2010/haskellch
 Machinery
 ~~~~~~~~~
 
-The following code will live in ``ghc-experimental`` under ``Data.String.Experimental``. After the API has stablized, these might eventually live in ``base`` under ``Data.String``, alongside ``IsString``.
+The following code will live in ``ghc-experimental`` under ``Data.String.Experimental``. After the API has stabilized, these might eventually live in ``base`` under ``Data.String``, alongside ``IsString``.
 
 ::
 
@@ -300,14 +302,14 @@ The desugaring here respects ``RebindableSyntax``, so a project that wishes to u
 OverloadedStrings
 ^^^^^^^^^^^^^^^^^
 
-When ``-XOverloadedStrings`` is enabled, a final ``fromString`` is added after the ``interpolateFinalize`` call. This still constructs the string with ``StringBuilder`` -> ``String``, so users might prefer using ``-XQualifiedStrings`` instead.
+When ``-XOverloadedStrings`` is enabled, ``s"..."`` expands to ``fromString (Data.String.Experimental.s"...")`` instead. Note this still constructs the string via ``StringBuilder`` -> ``String`` before converting, so users wanting to avoid the intermediate ``String`` should prefer using ``-XQualifiedStrings`` instead.
 
 .. _qualified-strings:
 
 QualifiedStrings
 ^^^^^^^^^^^^^^^^
 
-When ``-XQualifiedStrings`` is enabled, you may qualify string interpolation, where ``[modid.]s"..."`` desugars to the same expressions, except resolving the ``interpolate*`` functions as ``[modid.]interpolate*``. If both ``-XOverloadedStrings`` and ``-XQualifiedStrings`` are enabled, ``-XOverloadedStrings`` is ignored for ``[modid.]s"..."`` constructs.
+When ``-XQualifiedStrings`` is enabled, you may qualify string interpolation, where ``[modid.]s"..."`` desugars to the same expressions, except resolving the ``interpolate*`` functions as ``[modid.]interpolate*``. ``[modid.]s"..."`` is unaffected by ``-XOverloadedStrings`` because the latter applies only to the non-qualified form ``s"..."``.
 
 Some examples:
 
@@ -404,7 +406,7 @@ When ``-XMultilineStrings`` is enabled, string interpolation may be used with mu
 ``ghc-experimental`` modules
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-This proposal would be adding the following modules to ``ghc-experimental``, which would potentially be promoted to a proper library like ``base`` once the feature is stablized.
+This proposal would be adding the following modules to ``ghc-experimental``, which would potentially be promoted to a proper library like ``base`` once the feature is stabilized.
 
 .. list-table::
     :align: left
@@ -425,7 +427,7 @@ This proposal would be adding the following modules to ``ghc-experimental``, whi
 Template Haskell
 ~~~~~~~~~~~~~~~~
 
-We are intentionally not adding anything to Template Haskell, as one could just build the expression themselves. String interpolation is still supported in quotes, which will be desugared when translating to TH.
+We are intentionally not adding anything to Template Haskell, as one could just build the expansion directly. String interpolation is still supported in quotes, which will be desugared when translating to TH.
 
 Examples
 --------
@@ -528,7 +530,7 @@ If this instance did not take advantage of the polymorphism and was implemented 
         fromString (file <> ":" <> show line <> ":" <> show col) <>
         mempty
 
-Notice that the monomorphic implementation would concatenate the file/line/col as String and then lifting it up to TextBuilder, while the polymorphic implementation lifts file/line/col to TextBuilder immediately and concatenates as TextBuilder.
+Notice that the monomorphic implementation would concatenate the file/line/col as String and then lift it up to Text.Builder, while the polymorphic implementation lifts file/line/col to Text.Builder immediately and concatenates as Text.Builder.
 
 Effect and Interactions
 -----------------------
@@ -536,15 +538,15 @@ Effect and Interactions
 An existing program containing ``s"..."`` will break when ``-XStringInterpolation`` is enabled. While there's precedent for this (Template Haskell splices make ``$(...)`` different from ``$ (...)``), this is the first instance where whitespace matters for an alphanumeric identifier. But this is not a big deal:
 
 #. It's unlikely for someone to be naming a function as ``s`` in the first place
-#. Easily mitigatable: just add a space, which improves readability anyway
-#. Prefixing string literals like ``s"..."`` is common in other languages: Python, Scala, Javascript/Typescript, etc. so it shouldn't be a big hurdle for newcomers
+#. Easy to mitigate: just add a space, which improves readability anyway
+#. Prefixing string literals like ``s"..."`` is common in other languages: Python, Scala, JavaScript/TypeScript, etc. so it shouldn't be a big hurdle for newcomers
 
 Interacts nicely with ``-XOverloadedStrings``, ``-XQualifiedStrings``, and ``-XMultilineStrings``. See :ref:`proposed-spec` above.
 
 Costs and Drawbacks
 -------------------
 
-Development and maintenance is of moderate effort. Learnability for novice users will go up, since novice users probably expect string interpolation to be available, and might be frustrated at the lack of support currently.
+Development and maintenance are of moderate effort. Learnability for novice users will go up, since novice users probably expect string interpolation to be available, and might be frustrated at the lack of support currently.
 
 One minor drawback is the whitespace sensitivity of ``s"``, as discussed in "Effect and Interactions".
 
@@ -615,7 +617,7 @@ Expansion-related Alternatives
 
 * Use ``M.fromString`` instead of ``interpolateRaw``, to more tightly connect ``StringInterpolation`` with ``QualifiedStrings``
 
-  * While ``QualifiedStrings`` and ``StringInterpolation`` are closely related, and implementions *ought* to implement them consistently, the language feature should not enforce it, in the same way that typeclass laws are not enforced by the language
+  * While ``QualifiedStrings`` and ``StringInterpolation`` are closely related, and implementations *ought* to implement them consistently, the language feature should not enforce it, in the same way that typeclass laws are not enforced by the language
   * Even if we hardcoded ``fromString``, one could still devise a custom string interpolator that's inconsistent with ``M.fromString``; e.g. ``interpolateFinalize _ = "bad"``
 
 * Hardcode a wired-in ``Interpolate`` class with ``interpolateValue`` (and potentially ``interpolateRaw``)
@@ -633,7 +635,7 @@ Delimiter-related Alternatives
 
 * Allow ``$foo`` in addition to ``${foo}``
 
-  * This would complicate the syntax, and would also require interpolated string to escape bare ``$``.
+  * This would complicate the syntax, and would also require interpolated strings to escape bare ``$``.
 
 * Different quote delimiter
 
@@ -645,7 +647,7 @@ Delimiter-related Alternatives
 
 * No quote delimiter, always interpolate
 
-  * e.g. if we switch the delimiter to `\{...}`, which is currently invalid in a string
+  * e.g. if we switch the delimiter to ``\{...}``, which is currently invalid in a string
   * Used by `jq <https://jqlang.org/manual/#string-interpolation>`_
   * Downside is that you have to parse the string before figuring out how it should be desugared
 
