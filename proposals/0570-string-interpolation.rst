@@ -962,6 +962,56 @@ And gain access to safe string interpolation with HTML escaping by default:
   HTML.s"<h1>${title}</h1>${HTML.raw body}"
     == Html "<h1>Why is 1 &gt; 0?</h1><p>Hello world</p>"
 
+Custom interpolator: Ascii
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The existing machinery is general enough to support ``-XRequiredTypeArguments``, to support interpolators with compile-time validations:
+
+::
+
+    interpolateRaw :: forall (s :: Symbol) -> (KnownSymbol s, AsciiOnly s) => String
+    interpolateRaw s = symbolVal (Proxy @s)
+
+    interpolateValue :: InterpolateAscii a => a -> String
+    interpolateValue = interpolateAscii
+
+    interpolateAppend = (<>)
+    interpolateEmpty = ""
+    interpolateFinalize = id
+
+    class InterpolateAscii a where
+      interpolateAscii :: a -> String
+    instance InterpolateAscii Int where
+      interpolateAscii = show
+
+    -- | A usable constraint that raises a nice TypeError on failure.
+    type AsciiOnly :: Symbol -> Constraint
+    type family AsciiOnly s where
+      AsciiOnly s = Unless (IsAscii s) (
+        TypeError ('Text "Symbol " ':<>: 'ShowType s ':<>: 'Text " is not ASCII-only")
+        )
+
+    type Unless :: Bool -> Constraint -> Constraint
+    type family Unless s b where
+      Unless 'True _ = ()
+      Unless 'False c = c
+
+    -- | Walk the Symbol one Char at a time via UnconsSymbol.
+    type IsAscii :: Symbol -> Bool
+    type family IsAscii s where
+      IsAscii s = IsAsciiGo (UnconsSymbol s)
+
+    type IsAsciiGo :: Maybe (Char, Symbol) -> Bool
+    type family IsAsciiGo m where
+      IsAsciiGo 'Nothing            = 'True
+      IsAsciiGo ('Just '(c, rest))  = (CharToNat c <=? 127) && IsAscii rest
+
+::
+
+    Ascii.s"this is valid: ${123 :: Int}"
+
+    -- Ascii.s"this is a type error: 🙂"
+
 Custom interpolatable type: BigDecimal
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
