@@ -42,6 +42,7 @@ Motivation
 ----------
 
 Most non-trivial projects build strings at some point: printing out logs, rendering exceptions, generating code, pretty-printing. There are currently multiple ways to do this:
+
 ::
 
   -- concatenation + show
@@ -210,13 +211,24 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
 
 ::
 
+  newtype InterpolateBuilder = InterpolateBuilder {
+    unInterpolateBuilder :: forall s. (IsString s, Monoid s) => s
+  }
+
+  instance IsString InterpolateBuilder where
+    fromString s = InterpolateBuilder (fromString s)
+  instance Semigroup InterpolateBuilder where
+    InterpolateBuilder s1 <> InterpolateBuilder s2 = InterpolateBuilder (s1 <> s2)
+  instance Monoid InterpolateBuilder where
+    mempty = InterpolateBuilder mempty
+
   {----- Implementation of s"..." -----}
 
   interpolateRaw :: String -> StringBuilder
   interpolateRaw = fromString
 
   interpolateValue :: Interpolate a => a -> StringBuilder
-  interpolateValue = interpolate
+  interpolateValue = unInterpolateBuilder . interpolate
 
   interpolateAppend :: StringBuilder -> StringBuilder -> StringBuilder
   interpolateAppend = mappend
@@ -240,7 +252,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   {----- Interpolation of values -----}
 
   class Interpolate a where
-    interpolate :: (IsString s, Monoid s) => a -> s
+    interpolate :: a -> InterpolateBuilder
 
   instance Interpolate String where
     interpolate = fromString
@@ -253,8 +265,6 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
     interpolate = fromString . show
   instance Interpolate Bool where
     interpolate = fromString . show
-
-Types may implement ``Interpolate`` using ``IsString`` or ``Monoid``. The default interpolator will only ever use this as ``s ~ StringBuilder``, but this allows other qualified interpolators to reuse the built-in ``Interpolate`` class and avoid roundtripping through ``String`` in certain instances. See :ref:`composite-types` for an example and additional details.
 
 Expansion
 ~~~~~~~~~
@@ -356,7 +366,7 @@ A more sophisticated implementation could reuse the built-in ``Interpolate`` cla
     interpolateRaw = fromString
 
     interpolateValue :: Interpolate a => a -> MyStringBuilder
-    interpolateValue = interpolate
+    interpolateValue = unInterpolateBuilder . interpolate
 
     interpolateAppend :: MyStringBuilder -> MyStringBuilder -> MyStringBuilder
     interpolateAppend = mappend
@@ -468,12 +478,22 @@ Parsing
     * - ``s"a ${b -- asdf} c"``
       - The rest of the string is commented out
 
-.. _composite-types:
+.. _writing-interpolate-instances:
 
-Composite types
-~~~~~~~~~~~~~~~
+Writing Interpolate instances
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``Interpolate`` specifies a generic ``IsString s, Monoid s``, which allows composite types to stay within ``s``. If it were monomorphized to ``String``, instances that would only use ``fromString`` and ``<>`` would make unnecessary roundtrips through ``String``.
+``Interpolate`` instances will typically be implemented in one of three ways:
+
+* Converting value to ``String`` and calling ``fromString``
+
+* Invoking ``interpolate`` after preprocessing the type into an interpolatable value
+
+* Using string interpolation syntax
+
+  * Requires ``-XOverloadedStrings`` or ``-XQualifiedStrings`` with ``Data.String.Interpolate.Builder.Experimental``
+
+An example using string interpolation:
 
 ::
 
@@ -484,50 +504,9 @@ Composite types
       }
 
     instance Interpolate SrcLoc where
-      interpolate SrcLoc{..} =
-        interpolate file <>
-        fromString ":" <>
-        interpolate line <>
-        fromString ":" <>
-        interpolate col
+      interpolate SrcLoc{..} = s"${file}:${line}:${col}"
 
-The ``Basic`` interpolator would be useful here, to reuse string interpolation syntax (:ref:`basic-interpolator`):
-
-::
-
-    instance Interpolate SrcLoc where
-      interpolate SrcLoc{..} = Basic.s"${file'}:${line'}:${col'}"
-        where
-          file' = interpolate file
-          line' = interpolate line
-          col' = interpolate col
-
-If this instance did not take advantage of the polymorphism and was implemented as ``fromString s"${file}:${line}:${col}"``, it could have a performance impact on custom interpolators, such as ``text``:
-
-::
-
-    -- Original
-    Text.s"Error at: ${loc}"
-
-    -- Desugared, staying in polymorphic `s` with `interpolate file <> ...`
-    interpolateRaw "Error at: " `interpolateAppend`
-        (interpolate file <> fromString ":" <> interpolate line <> fromString ":" <> interpolate col) `interpolateAppend`
-        interpolateEmpty
-    Text.Builder.toText $
-        fromString "Error at: " <>
-        (fromString file <> fromString ":" <> fromString (show line) <> fromString ":" <> fromString (show col)) <>
-        mempty
-
-    -- Desugared, monomorphic implementation with `fromString s"..."`
-    interpolateRaw "Error at: " `interpolateAppend`
-        fromString (interpolate file <> fromString ":" <> interpolate line <> fromString ":" <> interpolate col) `interpolateAppend`
-        interpolateEmpty
-    Text.Builder.toText $
-        fromString "Error at: " <>
-        fromString (file <> ":" <> show line <> ":" <> show col) <>
-        mempty
-
-Notice that the monomorphic implementation would concatenate the file/line/col as String and then lift it up to Text.Builder, while the polymorphic implementation lifts file/line/col to Text.Builder immediately and concatenates as Text.Builder.
+Because ``InterpolateBuilder`` is a rank-2 type, it keeps the interpolation polymorphic and doesn't incur any performance penalties roundtripping through ``String``.
 
 Effect and Interactions
 -----------------------
@@ -765,7 +744,7 @@ When ``OverloadedStrings`` is enabled, the default interpolation builds up with 
 ::
 
   interpolateRaw = fromString
-  interpolateValue = interpolate
+  interpolateValue = unInterpolateBuilder . interpolate
   interpolateAppend = mappend
   interpolateEmpty = mempty
   interpolateFinalize = LazyText.toStrict . Builder.toLazyText
