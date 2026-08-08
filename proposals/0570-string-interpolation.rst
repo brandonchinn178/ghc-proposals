@@ -224,19 +224,19 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
 
   {----- Implementation of s"..." -----}
 
-  interpolateRaw :: String -> StringBuilder
+  interpolateRaw :: IsString s => String -> s
   interpolateRaw = fromString
 
-  interpolateValue :: Interpolate a => a -> StringBuilder
+  interpolateValue :: (Interpolate a, IsString s, Monoid s) => a -> s
   interpolateValue = unInterpolateBuilder . interpolate
 
-  interpolateAppend :: StringBuilder -> StringBuilder -> StringBuilder
+  interpolateAppend :: Monoid s => s -> s -> s
   interpolateAppend = mappend
 
-  interpolateEmpty :: StringBuilder
+  interpolateEmpty :: Monoid s => s
   interpolateEmpty = mempty
 
-  interpolateFinalize :: StringBuilder -> String
+  interpolateFinalize :: (forall s. (IsString s, Monoid s) => s) -> String
   interpolateFinalize = buildString
 
   {----- StringBuilder -----}
@@ -309,7 +309,7 @@ The desugaring here respects ``RebindableSyntax``, so a project that wishes to u
 OverloadedStrings
 ^^^^^^^^^^^^^^^^^
 
-When ``-XOverloadedStrings`` is enabled, ``s"..."`` expands to ``fromString (Data.String.Experimental.s"...")`` instead. Note this still constructs the string via ``StringBuilder`` -> ``String`` before converting, so users wanting to avoid the intermediate ``String`` should prefer using ``-XQualifiedStrings`` instead.
+When ``-XOverloadedStrings`` is enabled, ``s"..."`` expands to ``fromString (Data.String.Experimental.s"...")`` instead. Note this still constructs the string via ``StringBuilder`` -> ``String`` before converting, so string-like types should provide rewrite rules targeting ``fromString (interpolateFinalize f)``; see :ref:`rewrite-rules-for-performant-interpolation` for more details.
 
 .. _qualified-strings:
 
@@ -341,7 +341,7 @@ Some examples:
     SQL.interpolateValue age                                 `SQL.interpolateAppend`
     SQL.interpolateEmpty
 
-It's highly recommended that every type with an ``IsString`` instance provides at least one ``QualifiedStrings`` interpolator reusing the built-in ``Interpolate`` class. That way, there's always an option to use ``MyString.s"..."`` if the user does not wish to globally enable ``-XOverloadedStrings``. A naive implementation would simply be a monomorphized version of the default interpolator:
+It's highly recommended that every type with an ``IsString`` instance provides an interpolator that's the monomorphized version of the default interpolator. That way, there's always an option to use ``MyString.s"..."`` if the user does not wish to globally enable ``-XOverloadedStrings``. For example:
 
 ::
 
@@ -353,31 +353,10 @@ It's highly recommended that every type with an ``IsString`` instance provides a
     import Data.String.Experimental as X hiding (interpolateFinalize)
     import Data.String.Experimental qualified as S
 
-    interpolateFinalize :: StringBuilder -> MyString
-    interpolateFinalize = S.interpolateFinalize
+    interpolateFinalize :: (forall s. (IsString s, Monoid s) => s) -> MyString
+    interpolateFinalize = fromString . S.interpolateFinalize
 
-A more sophisticated implementation could reuse the built-in ``Interpolate`` class using its own ``Builder`` type:
-
-::
-
-    module Data.MyString where
-
-    interpolateRaw :: String -> MyStringBuilder
-    interpolateRaw = fromString
-
-    interpolateValue :: Interpolate a => a -> MyStringBuilder
-    interpolateValue = unInterpolateBuilder . interpolate
-
-    interpolateAppend :: MyStringBuilder -> MyStringBuilder -> MyStringBuilder
-    interpolateAppend = mappend
-
-    interpolateEmpty :: MyStringBuilder
-    interpolateEmpty = mempty
-
-    interpolateFinalize :: MyStringBuilder -> MyString
-    interpolateFinalize = buildMyString
-
-The only requirement for this recommendation is that ``MyString`` provide a module implementing string interpolation using the built-in ``Interpolate`` type class. Of course, ``MyString`` is free to implement more string interpolators, potentially using its own ``MyString.Interpolate`` type class for more performant interpolations.
+Of course, ``MyString`` is free to implement more string interpolators, but a monomorphized default interpolator should be provided at minimum.
 
 The following laws should hold, if the expression compiles:
 
@@ -426,8 +405,8 @@ This proposal would be adding the following modules to ``ghc-experimental``, whi
       - Defines the ``Interpolate`` class and instances as written in :ref:`machinery`
     * - ``Data.String.Interpolate.Default.Experimental``
       - Defines the classes and functions for the default ``s"..."`` syntax, as written in :ref:`machinery`
-    * - ``Data.String.Interpolate.Basic.Experimental``
-      - Defines an interpolator that's the same as the default except interpolates values directly without automatic conversion with ``Interpolate`` (See :ref:`basic-interpolator`)
+    * - ``Data.String.Interpolate.Builder.Experimental``
+      - Defines the default interpolator monomorphized for ``InterpolateBuilder`` for use with ``-XQualifiedStrings``
     * - ``Data.String.Interpolate.ShowS.Experimental``
       - Defines an interpolator useful for implementing ``showsPrec`` (See :ref:`shows-interpolator`)
 
@@ -477,6 +456,40 @@ Parsing
       - The second ``{`` is not a valid character to start an expression
     * - ``s"a ${b -- asdf} c"``
       - The rest of the string is commented out
+
+.. _rewrite-rules-for-performant-interpolation:
+
+Rewrite rules for performant interpolation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The default interpolator always builds via ``String``, even with ``-XOverloadedStrings`` enabled. String-like types like ``Text`` should define rewrite rules to make interpolation performant. There are two extension points needing rewrite rules:
+
+* ``fromString (interpolateFinalize x)``
+
+  * By default, finalizes with ``StringBuilder`` and lifts with ``fromString``
+  * A rewrite rule is needed to finalize with a more efficient builder for the string-like type
+
+* ``interpolateValue``
+
+  * By default, invokes ``interpolate`` which ultimately requires converting through ``String``
+  * Rewrite rules are needed for each type that can be converted into the builder type more effeciently than through ``String``
+
+Here are example rewrite rules ``Text`` might write:
+
+::
+
+  {-# RULES
+    "interpolateFinalize/Text"
+      forall (x :: forall s. (IsString s, Monoid s) => s).
+      Text.pack (interpolateFinalize x) = Text.Lazy.toStrict (Text.Builder.toLazyText (x @Text.Builder))
+
+    "interpolateValue/Text.Builder/Text"
+      interpolateValue = Text.Builder.fromText
+    "interpolateValue/Text.Builder/Int"
+      interpolateValue = Text.Builder.decimal
+    #-}
+
+Note that the ``interpolateFinalize`` rule needs to target the implementation of ``fromString`` since it's typically inlined before rules fire.
 
 .. _writing-interpolate-instances:
 
@@ -670,42 +683,6 @@ Strings are notorious for O(n^2) concatenations, but the current proposal builds
 
 Benchmarks: https://github.com/brandonchinn178/ghc-string-interpolation-prototypes/tree/main/bench
 
-.. _basic-interpolator:
-
-Provided interpolator: Basic
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-As part of the feature, ``ghc-experimental`` will provide ``Data.String.Interpolate.Basic.Experimental``, which provides an interpolator that does not implicitly convert values and stays in ``s`` the whole time.
-
-::
-
-  module Data.String.Interpolate.Basic.Experimental where
-
-  interpolateRaw :: IsString s => String -> s
-  interpolateRaw = fromString
-
-  interpolateValue :: s -> s
-  interpolateValue = id
-
-  interpolateAppend :: Monoid s => s -> s -> s
-  interpolateAppend = mappend
-
-  interpolateEmpty :: Monoid s => s
-  interpolateEmpty = mempty
-
-  interpolateFinalize :: s -> s
-  interpolateFinalize = id
-
-This is particularly useful for ``Builder``, where users could explicitly convert values and avoid the penalty of going through ``String`` with the default ``Interpolate`` class.
-
-::
-
-  import Data.String.Interpolate.Basic.Experimental qualified as B
-  import Data.Text.Lazy.Builder qualified as B
-
-  render :: Person -> B.Builder
-  render Person{..} = B.s"Person(name = ${B.fromLazyText name}, age = ${B.decimal age})"
-
 .. _shows-interpolator:
 
 Provided interpolator: ShowS
@@ -739,15 +716,7 @@ Users could then write:
 Text
 ~~~~
 
-When ``OverloadedStrings`` is enabled, the default interpolation builds up with ``StringBuilder`` then converts to ``Text`` with a final ``fromString``. As mentioned in :ref:`qualified-strings`, ``text`` should provide interpolators that reuse the built-in ``Interpolate`` class, probably using ``Builder`` to be as performant as possible:
-
-::
-
-  interpolateRaw = fromString
-  interpolateValue = unInterpolateBuilder . interpolate
-  interpolateAppend = mappend
-  interpolateEmpty = mempty
-  interpolateFinalize = LazyText.toStrict . Builder.toLazyText
+The ``text`` library should provide rewrite rules as described in :ref:`rewrite-rules-for-performant-interpolation`, which would allow performant interpolation with the default interpolator.
 
 With this support, users can write the following:
 
