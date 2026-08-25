@@ -266,6 +266,47 @@ And the user could do:
 
 One scenario this can come up is when parsing ``Aeson.Array``, which stores JSON values in a ``Vector``.
 
+NonEmpty Lists
+~~~~~~~~~~~~~~
+
+::
+
+  module Data.List.NonEmpty.Qualified where
+
+  data Empty a = Empty
+
+  class Cons f where
+    cons :: a -> f a -> NonEmpty a
+  instance Cons NonEmpty where
+    cons = NonEmpty.cons
+  instance Cons Empty where
+    cons a _ = NonEmpty.singleton a
+
+  buildList ::
+    Int ->
+    ( (forall x f. Cons f => x -> f x -> NonEmpty x) ->
+      Empty a ->
+      NonEmpty a
+    ) ->
+    NonEmpty a
+  buildList _ f = f cons Empty
+
+Usage:
+
+::
+
+  import Data.List.NonEmpty.Qualified qualified as NE
+
+  main :: IO ()
+  main = do
+    -- 1 :| [2, 3]
+    print NE.[1,2,3]
+
+    -- Type error:
+    -- Couldn't match expected type: NonEmpty a
+    --             with actual type: Empty a
+    NE.[]
+
 Heterogeneous Lists
 ~~~~~~~~~~~~~~~~~~~
 
