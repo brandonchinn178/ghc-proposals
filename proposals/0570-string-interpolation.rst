@@ -311,6 +311,8 @@ OverloadedStrings
 
 When ``-XOverloadedStrings`` is enabled, ``s"..."`` expands to ``fromString (Data.String.Experimental.s"...")`` instead. Note this still constructs the string via ``StringBuilder`` -> ``String`` before converting, so string-like types should provide rewrite rules targeting ``fromString (interpolateFinalize f)``; see :ref:`rewrite-rules-for-performant-interpolation` for more details.
 
+Note that the only requirement here is ``fromString``; using string interpolation with ``-XOverloadedStrings`` does not require a ``Monoid`` instance.
+
 .. _qualified-strings:
 
 QualifiedStrings
@@ -539,6 +541,8 @@ Development and maintenance are of moderate effort. Learnability for novice user
 
 One minor drawback is the whitespace sensitivity of ``s"``, as discussed in "Effect and Interactions".
 
+Prior to this proposal, ``fromString`` had the implicit assumption that it was intended to run on string literals in a program. With this proposal, ``fromString`` may now also be called on the full string interpolation, which may include user input and may introduce vulnerabilities. We deem this low risk, however, as one could always call ``fromString`` oneself.
+
 Alternatives
 ------------
 
@@ -615,9 +619,13 @@ Expansion-related Alternatives
 
 * Add an ``InterpolateBuilder`` type family to specify a builder type for the interpolator ``s`` and define ``interpolateFinalize`` with that type family
 
-  * Allows the default ``s"..."`` to build more performantly for non-``String``
-  * Type inference should be unambiguous, since ``s`` should be known, and ``Builder s`` is unique for a given ``s``
-  * Adds complexity; probably better to just use a qualified interpolator for this
+  * Pro: eliminates the use of ``fromString`` for the final string (see Cost and Drawbacks)
+  * Con: String interpolation requires adding a new instance; in the current proposal, anything with ``IsString`` gets string interpolation for free
+
+* Put the ``fromString`` inside ``interpolateFinalize`` and add ``@String`` if non-``OverloadedStrings``
+
+  * Pro: ``OverloadedStrings`` and `QualifiedStrings`` now have the same expansion (modulo the module specified)
+  * Con: In the current proposal, ``OverloadedStrings`` adds a final ``fromString`` in both a normal string literal and a string interpolation. Doing this option would remove that symmetry
 
 Delimiter-related Alternatives
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
