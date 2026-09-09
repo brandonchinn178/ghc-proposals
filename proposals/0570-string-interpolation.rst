@@ -356,7 +356,7 @@ It's highly recommended that every type with an ``IsString`` instance provides a
     import Data.String.Experimental qualified as S
 
     interpolateFinalize :: (forall s. (IsString s, Monoid s) => s) -> MyString
-    interpolateFinalize = fromString . S.interpolateFinalize
+    interpolateFinalize x = fromString (S.interpolateFinalize x)
 
 Of course, ``MyString`` is free to implement more string interpolators, but a monomorphized default interpolator should be provided at minimum.
 
