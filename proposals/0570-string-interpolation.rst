@@ -211,16 +211,16 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
 
 ::
 
-  newtype InterpolateBuilder = InterpolateBuilder {
-    unInterpolateBuilder :: forall s. (IsString s, Monoid s) => s
+  newtype Interpolation = Interpolation {
+    unInterpolation :: forall s. (IsString s, Monoid s) => s
   }
 
-  instance IsString InterpolateBuilder where
-    fromString s = InterpolateBuilder (fromString s)
-  instance Semigroup InterpolateBuilder where
-    InterpolateBuilder s1 <> InterpolateBuilder s2 = InterpolateBuilder (s1 <> s2)
-  instance Monoid InterpolateBuilder where
-    mempty = InterpolateBuilder mempty
+  instance IsString Interpolation where
+    fromString s = Interpolation (fromString s)
+  instance Semigroup Interpolation where
+    Interpolation s1 <> Interpolation s2 = Interpolation (s1 <> s2)
+  instance Monoid Interpolation where
+    mempty = Interpolation mempty
 
   {----- Implementation of s"..." -----}
 
@@ -228,7 +228,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   interpolateRaw = fromString
 
   interpolateValue :: (Interpolate a, IsString s, Monoid s) => a -> s
-  interpolateValue = unInterpolateBuilder . interpolate
+  interpolateValue = unInterpolation . interpolate
 
   interpolateAppend :: Monoid s => s -> s -> s
   interpolateAppend = mappend
@@ -252,7 +252,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   {----- Interpolation of values -----}
 
   class Interpolate a where
-    interpolate :: a -> InterpolateBuilder
+    interpolate :: a -> Interpolation
 
   instance Interpolate String where
     interpolate = fromString
@@ -408,7 +408,7 @@ This proposal would be adding the following modules to ``ghc-experimental``, whi
     * - ``Data.String.Interpolate.Default.Experimental``
       - Defines the classes and functions for the default ``s"..."`` syntax, as written in :ref:`machinery`
     * - ``Data.String.Interpolate.Builder.Experimental``
-      - Defines the default interpolator monomorphized for ``InterpolateBuilder`` for use with ``-XQualifiedStrings``
+      - Defines the default interpolator monomorphized for ``Interpolation`` for use with ``-XQualifiedStrings``
     * - ``Data.String.Interpolate.ShowS.Experimental``
       - Defines an interpolator useful for implementing ``showsPrec`` (See :ref:`shows-interpolator`)
 
@@ -521,7 +521,7 @@ An example using string interpolation:
     instance Interpolate SrcLoc where
       interpolate SrcLoc{..} = s"${file}:${line}:${col}"
 
-Because ``InterpolateBuilder`` is a rank-2 type, it keeps the interpolation polymorphic and doesn't incur any performance penalties roundtripping through ``String``.
+Because ``Interpolation`` is a rank-2 type, it keeps the interpolation polymorphic and doesn't incur any performance penalties roundtripping through ``String``.
 
 Effect and Interactions
 -----------------------
