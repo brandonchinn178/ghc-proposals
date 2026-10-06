@@ -217,27 +217,35 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
 
   instance IsString Interpolation where
     fromString s = Interpolation (fromString s)
+    {-# INLINE fromString #-}
   instance Semigroup Interpolation where
     Interpolation s1 <> Interpolation s2 = Interpolation (s1 <> s2)
+    {-# INLINE (<>) #-}
   instance Monoid Interpolation where
     mempty = Interpolation mempty
+    {-# INLINE mempty #-}
 
   {----- Implementation of s"..." -----}
 
-  interpolateRaw :: IsString s => String -> s
+  interpolateRaw :: String -> Interpolation
   interpolateRaw = fromString
+  {-# INLINE interpolateRaw #-}
 
-  interpolateValue :: (Interpolate a, IsString s, Monoid s) => a -> s
-  interpolateValue = unInterpolation . interpolate
+  interpolateValue :: Interpolate a => a -> Interpolation
+  interpolateValue x = unInterpolation (interpolateValueAt x)
+  {-# INLINE interpolateValue #-}
 
-  interpolateAppend :: Monoid s => s -> s -> s
+  interpolateAppend :: Interpolation -> Interpolation -> Interpolation
   interpolateAppend = mappend
+  {-# INLINE interpolateAppend #-}
 
-  interpolateEmpty :: Monoid s => s
+  interpolateEmpty :: Interpolation
   interpolateEmpty = mempty
+  {-# INLINE interpolateEmpty #-}
 
-  interpolateFinalize :: (forall s. (IsString s, Monoid s) => s) -> String
-  interpolateFinalize = buildString
+  interpolateFinalize :: Interpolation -> String
+  interpolateFinalize = buildString . unInterpolate
+  {-# INLINE [1] interpolateFinalize #-}
 
   {----- StringBuilder -----}
 
@@ -250,6 +258,12 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   buildString (StringBuilder (Endo f)) = f ""
 
   {----- Interpolation of values -----}
+
+  -- | Function that can be targeted by rewrite rules to provide more performant
+  --   implementations for specific (a -> s) conversions
+  interpolateValueAt :: (Interpolate a, IsString s, Monoid s) => a -> s
+  interpolateValueAt x = unInterpolation (interpolate x)
+  {-# NOINLINE [1] interpolateValueAt #-}
 
   class Interpolate a where
     interpolate :: a -> Interpolation
@@ -355,7 +369,7 @@ It's highly recommended that every type with an ``IsString`` instance provides a
     import Data.String.Experimental as X hiding (interpolateFinalize)
     import Data.String.Experimental qualified as S
 
-    interpolateFinalize :: (forall s. (IsString s, Monoid s) => s) -> MyString
+    interpolateFinalize :: Interpolation -> MyString
     interpolateFinalize x = fromString (S.interpolateFinalize x)
 
 Of course, ``MyString`` is free to implement more string interpolators, but a monomorphized default interpolator should be provided at minimum.
@@ -471,7 +485,7 @@ The default interpolator always builds via ``String``, even with ``-XOverloadedS
   * By default, finalizes with ``StringBuilder`` and lifts with ``fromString``
   * A rewrite rule is needed to finalize with a more efficient builder for the string-like type
 
-* ``interpolateValue``
+* ``interpolateValueAt``
 
   * By default, invokes ``interpolate`` which ultimately requires converting through ``String``
   * Rewrite rules are needed for each type that can be converted into the builder type more effeciently than through ``String``
@@ -482,13 +496,13 @@ Here are example rewrite rules ``Text`` might write:
 
   {-# RULES
     "interpolateFinalize/Text"
-      forall (x :: forall s. (IsString s, Monoid s) => s).
-      Text.pack (interpolateFinalize x) = Text.Lazy.toStrict (Text.Builder.toLazyText (x @Text.Builder))
+      forall (x :: Interpolation).
+      Text.pack (interpolateFinalize x) = Text.Lazy.toStrict (Text.Builder.toLazyText ((unInterpolation x) @Text.Builder))
 
-    "interpolateValue/Text.Builder/Text"
-      interpolateValue = Text.Builder.fromText
-    "interpolateValue/Text.Builder/Int"
-      interpolateValue = Text.Builder.decimal
+    "interpolateValueAt/Text.Builder/Text"
+      interpolateValueAt = Text.Builder.fromText
+    "interpolateValueAt/Text.Builder/Int"
+      interpolateValueAt = Text.Builder.decimal
     #-}
 
 Note that the ``interpolateFinalize`` rule needs to target the implementation of ``fromString`` since it's typically inlined before rules fire.
