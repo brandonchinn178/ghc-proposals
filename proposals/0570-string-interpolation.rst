@@ -212,8 +212,9 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
 ::
 
   -- | Requires the type @s@ to satisfy the following laws:
-  --     * fromString @s "" == mempty
-  --     * fromString @s (u + v) == fromString u <> fromString v
+  --
+  --   > fromString @s "" == mempty
+  --   > fromString @s (u ++ v) == fromString u <> fromString v
   newtype Interpolation = Interpolation {
     unInterpolation :: forall s. (IsString s, Monoid s) => s
   }
@@ -250,6 +251,7 @@ The following code will live in ``ghc-experimental`` under ``Data.String.Experim
   interpolateFinalize x = buildString (unInterpolation x)
   {-# INLINE [1] interpolateFinalize #-}
 
+  -- Sound by the rules on `Interpolation`.
   {-# RULES
       "fromString/interpolateFinalize/Interpolation"
         forall (x :: Interpolation).
@@ -524,7 +526,7 @@ Writing Interpolate instances
 
 ``Interpolate`` instances will typically be implemented in one of three ways:
 
-* Converting value to ``String`` and calling ``fromString``
+* Converting a value to ``String`` and calling ``fromString``
 
 * Invoking ``interpolate`` after preprocessing the type into an interpolatable value
 
